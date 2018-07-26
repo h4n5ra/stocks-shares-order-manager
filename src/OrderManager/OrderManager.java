@@ -13,40 +13,34 @@ import LiveMarketData.LiveMarketData;
 import OrderRouter.Router;
 import Ref.Instrument;
 import Ref.Ric;
-import Tools.FixTagFactory;
-import Tools.FixTagRef;
-import Tools.IFixTag;
+import Tools.*;
 import TradeScreen.TradeScreen;
-import Tools.MyLogger;
 import org.apache.log4j.Level;
 
 import static java.lang.Thread.sleep;
+
+/* OrderManager handles order request by first trying to pair internal orders from its clients before sending it out to
+the market itself. It reads and writes to output/input streams to communicate to the trader, the routers and the clients
+through socket connections.
+ */
 
 public class OrderManager {
 
     /*
         FixTag message type Reference: TODO replace this with a proper reference file?
      */
-    private static final char newOrderSingle = 'D';
-    private static final char cancelOrderRequest = 'F';
-    private static final char executionReport = '8';
 
     private static LiveMarketData liveMarketData;
     private HashMap<Long, Order> orders = new HashMap<Long, Order>(); //debugger will do this line as it gives state to the object
     //currently recording the number of new order messages we get. TODO why? use it for more?
-    private long id = 0; //debugger will do this line as it gives state to the object
-    private Socket[] orderRouters; //debugger will skip these lines as they dissapear at compile time into 'the object'/stack
+    private long id = 0;
+    private Socket[] orderRouters;
     private Socket[] clients;
     private Socket trader;
-    private final Object lock = new Object();
     private boolean stop;
 
-    private static boolean clientRequest = false;
-    private static boolean traderRequest = false;
-    private static boolean routerRequest = false;
-
     // Loop variables
-    int clientId, routerId;
+    int routerId;
     Socket router;
     ObjectInputStream inputStream;
 
@@ -61,7 +55,8 @@ public class OrderManager {
                 s.setKeepAlive(true);
                 return s;
             } catch (IOException e) {
-                sleep(500);
+                MyLogger.out("Failed to establish socket.", Level.FATAL);
+                sleep(50);
                 tryCounter++;
             }
         }
@@ -100,21 +95,25 @@ public class OrderManager {
         this.stop= stop;
     }
 
-    public void mainLoop() throws IOException, ClassNotFoundException, InterruptedException {
+    public void mainLoop()  {
         // Main loop of the manager.
-        long count = 0;
-        while ( count< 50 || !stop) {
-            long start = System.nanoTime();
-            clientLoop();
-            long duration = (System.nanoTime() - start) / 1;
-            MyLogger.out("Client loop duration: " + duration + "ns", Level.FATAL);
-            routerLoop();
-            traderLoop();
-            count++;
-            sleep(500);
+        try {
+            long count = 0;
+            while (count < 50 || !stop) {
+                long start = System.nanoTime();
+                clientLoop();
+                long duration = (System.nanoTime() - start) / 1;
+                routerLoop();
+                traderLoop();
+                count++;
+                sleep(50);
 
+            }
+            System.out.println("MainLoop Order Manager escaped");
         }
-        System.out.println("MainLoop Order Manager escaped");
+        catch (IOException | ClassNotFoundException | InterruptedException e){
+            MyLogger.out(e.getMessage(), Level.FATAL);
+        }
     }
 
     private void clientLoop() throws IOException, ClassNotFoundException {
@@ -130,13 +129,13 @@ public class OrderManager {
                 inputStream = new ObjectInputStream(client.getInputStream());
                 IFixTag fixTag = FixTagFactory.read(inputStream);
                 switch(fixTag.getMsgType()) {
-                    case newOrderSingle:
+                    case FixTagRef.NEW_ORDER_SINGLE:
                         MyLogger.out("Recieved NOS from client:     " + fixTag.getCOrderId() + " " + id);
                         newOrder(clientId,fixTag.getCOrderId(),fixTag.getRic(),fixTag.getSide(),fixTag.getQuantity());
                         break;
-                    case cancelOrderRequest:
+                    case FixTagRef.CANCEL_REQUEST:
                         MyLogger.out("Recieved cancel from client:  " + fixTag.getCOrderId() + " " + fixTag.getOMOrderId());
-                        cancelOrder(clientId,fixTag.getCOrderId(),fixTag.getOMOrderId());
+                        setToPendingCancelled(clientId,fixTag.getCOrderId(),fixTag.getOMOrderId());
                         break;
                     default:
                         MyLogger.out("Unknown message type: " + fixTag.getMsgType());
@@ -144,13 +143,9 @@ public class OrderManager {
                 }
             }
         }
-
-//        clientRequest = false;
     }
 
     private void routerLoop() throws IOException, ClassNotFoundException {
-//        if(!routerRequest)
-//            return;
         for (routerId = 0; routerId < this.orderRouters.length; routerId++) {
             router = this.orderRouters[routerId];
             // If data is available to be read in.
@@ -163,6 +158,11 @@ public class OrderManager {
                     case "bestPrice":
                         long orderId = inputStream.readLong();
                         int sliceId = inputStream.readInt();
+                        Order o = orders.get(orderId);
+                        if(o==null) {
+                            MyLogger.out("order no longer exists: " + orderId);
+                            break;
+                        }
                         Order slice = orders.get(orderId).slices.get(sliceId);
                         slice.bestPrices[routerId] = inputStream.readDouble();
                         slice.bestPriceCount++;
@@ -170,8 +170,14 @@ public class OrderManager {
                             reallyRouteOrder(sliceId, slice);
                         break;
                     case "newFill":
-                        newFill(inputStream.readLong(), inputStream.readInt(), inputStream.readInt(),
+                        orderId = inputStream.readLong();
+                        o = orders.get(orderId);
+                        newFill(orderId, inputStream.readInt(), inputStream.readInt(),
                                 inputStream.readDouble());
+                        o.setNotRouted();
+                        if(o.OrdStatus==FixTagRef.PENDING_CANCELLED) {
+                            cancelOrder(o);
+                        }
                         break;
                     default:
                         MyLogger.out("Unexpected method: " + method);
@@ -179,43 +185,52 @@ public class OrderManager {
                 }
             }
         }
-
-//        routerRequest = false;
     }
 
     private void traderLoop() throws IOException, ClassNotFoundException {
-//        if(!traderRequest)
-//            return;
         if (this.trader.getInputStream().available() > 0) {
             ObjectInputStream inputStream = new ObjectInputStream(this.trader.getInputStream());
             String method = (String) inputStream.readObject();
             MyLogger.out("Recieved message from trader: " + method);
             switch (method) {
                 case "acceptOrder":
-                    acceptOrder(inputStream.readLong());
+                    long orderId = inputStream.readLong();
+                    acceptOrder(orderId);
                     break;
                 case "sliceOrder":
-                    sliceOrder(inputStream.readLong(), inputStream.readInt());
+                    // read the inputstream with id of order to slice and the size of it
+                    long idToSlice = inputStream.readLong();
+                    int sizeOfSlice = inputStream.readInt();
+                    Order o = orders.get(idToSlice);
+                    if(o==null) {
+                        MyLogger.out("order no longer exists: " + idToSlice);
+                        break;
+                    }
+                    int slicedId = sliceOrder(idToSlice, sizeOfSlice);
+                    // sliceOrder returns a negative value (and an error message) if we can't do a slice of that size
+                    if (slicedId >= 0) {
+                        Order slice = orders.get(idToSlice).slices.get(slicedId);
+                        // Before we send it out to the trading center we check if we can do an internal cross and send
+                        // the rest (if any) out to the trading center.
+                        internalCross(idToSlice, slice);
+                        int sizeRemaining = slice.sizeRemaining();
+                        if (sizeRemaining > 0) {
+                            routeOrder(idToSlice, slicedId, sizeRemaining, slice);
+                        }
+                    }
                     break;
                 default:
                     MyLogger.out("Unexpected method: " + method);
                     break;
             }
         }
-
-//        traderRequest = false;
     }
-
-//    synchronized public static void makeClientRequest() { clientRequest = true; }
-//    synchronized public static void makeTraderRequest() { traderRequest = true; }
-//    synchronized public static void makeRouterRequest() { routerRequest = true; }
-
 
 
     // Create a new order
     //TODO use side to determine if the new order is a buy or a sell (at the moment assumes sell)
     private void newOrder(long clientId, long clientOrderId, Ric ric, char side, int quantity) throws IOException {
-        orders.put(id, new Order(clientId, clientOrderId, new Instrument(ric), quantity, side));
+        orders.put(id, new Order(id, clientId, clientOrderId, new Instrument(ric), quantity, side));
         if(side == '1') {
             MyLogger.out("New order with side : BUY");
         }  else if (side == '2') {
@@ -238,7 +253,7 @@ public class OrderManager {
         IFixTag tag = FixTagFactory.makeExecutionReport(o.id,o.clientOrderID, o.OrdStatus);
         tag.send(os);
         os.flush();
-        MyLogger.out("Sent update to client:        " + tag.getCOrderId() + " " + tag.getOMOrderId());
+        MyLogger.out("Sent update to client:        " + tag.getCOrderId() + " " + tag.getOMOrderId() + " " + tag.getOrdStatus());
     }
 
     private void sendOrderToTrader(long id, Order o, Object method) throws IOException {
@@ -248,9 +263,12 @@ public class OrderManager {
         ost.writeObject(o);
         ost.flush();
     }
-
     public void acceptOrder(long id) throws IOException {
         Order o = orders.get(id);
+        if(o==null) {
+            MyLogger.out("order no longer exists: " + id);
+            return;
+        }
         if (o.OrdStatus != FixTagRef.PENDING_NEW) { //Pending New
             MyLogger.out("error accepting order that has already been accepted");
             return;
@@ -261,21 +279,16 @@ public class OrderManager {
     }
 
     // Slice order into multiple smaller orders.
-    public void sliceOrder(long id, int sliceSize) throws IOException {
+    public int sliceOrder(long id, int sliceSize) throws IOException {
         Order o = orders.get(id);
         //slice the order. We have to check this is a valid size.
         //Order has a list of slices, and a list of fills, each slice is a childorder and each fill is associated with either a child order or the original order
         if (o.sizeRemaining() - o.sliceSizes() < sliceSize) {
             MyLogger.out("error sliceSize is bigger than remaining size to be filled on the order");
-            return;
+            return -1;
         }
         int sliceId = o.newSlice(sliceSize);
-        Order slice = o.slices.get(sliceId);
-        internalCross(id, slice);
-        int sizeRemaining = o.slices.get(sliceId).sizeRemaining();
-        if (sizeRemaining > 0) {
-            routeOrder(id, sliceId, sizeRemaining, slice);
-        }
+        return sliceId;
     }
 
     // Attempt to match orders.
@@ -287,12 +300,6 @@ public class OrderManager {
             if (!(matchingOrder.instrument.toString().equals(o.instrument.toString()) && matchingOrder.initialMarketPrice == o.initialMarketPrice &&
                     matchingOrder.side != o.side))
                 continue;
-            System.out.println("TESTING CROSS: " + o.side + " : " + matchingOrder.side);
-            System.out.println("TESTING CROSS: " + o.instrument + " : " + matchingOrder.instrument);
-            System.out.println("TESTING CROSS: " + o.initialMarketPrice + " : " + matchingOrder.initialMarketPrice);
-            System.out.println("REMAINING 1: " + o.sizeRemaining());
-            System.out.println("REMAINING 2: " + matchingOrder.sizeRemaining());
-            //TODO add support here and in Order for limit orders
             int sizeBefore = o.sizeRemaining();
             o.cross(matchingOrder);
             if (sizeBefore != o.sizeRemaining()) {
@@ -306,19 +313,25 @@ public class OrderManager {
         //todo set to pending cancelled
         //in the main loop if you recieve an update on the cancelled order then deal with that
         Order o = orders.get(orderID);
+        if(o==null) {
+            MyLogger.out("order no longer exists: " + orderID);
+            return;
+        }
+
         o.OrdStatus = FixTagRef.PENDING_CANCELLED;
-        sendUpdateToClient(orders.get(orderID));
+        sendUpdateToClient(o);//TODO wait till client is reading updates
+        if(!o.isRouted) cancelOrder(o);
     }
 
     //clientID is the id of the client
     //CorderID is the "clients order id" i.e. the orderid stored by the client
     //orderID is the id of the original order stored in this OM
-    private void cancelOrder(int clientID, long CorderID, long orderID) {
-        //TODO implement this
-        //get the order from orders based on orderid
-        //"CANCEL" it?!?
-        //	either cancel in house and send to client or send cancel to router
-        //tell the client that it has been cancelled by calling sendCancel
+    private void cancelOrder(Order o) throws IOException {
+        o.OrdStatus=FixTagRef.CANCELLED;
+        sendUpdateToClient(o);
+        sendOrderToTrader(o.id,o,TradeScreen.api.cancel);
+        orders.remove(o.id);
+        MyLogger.out("Order cancelled: " + o.clientOrderID + " " + o.id);
     }
 
     // Fill order
@@ -348,8 +361,7 @@ public class OrderManager {
 
     // Finds the best price and then sends to main router.
     private void reallyRouteOrder(int sliceId, Order o) throws IOException {
-        //TODO this assumes we are buying rather than selling
-        // Is this TODO or comment?
+        o.setRouted();
         int minIndex = 0;
         double min = o.bestPrices[0];
         for (int i = 1; i < o.bestPrices.length; i++) {

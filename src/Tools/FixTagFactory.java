@@ -19,6 +19,7 @@ public class FixTagFactory {
 
     public static IFixTag makeExecutionReport(long orderManagerOrderID, long clientOrderID, char status) {
         FixTag f = new FixTag();
+        System.out.println("OMORDERID: " + orderManagerOrderID);
         f.msgType=FixTagRef.EXECUTION_REPORT;
         f.OMOrderId=orderManagerOrderID;
         f.COrderId=clientOrderID;
@@ -31,15 +32,6 @@ public class FixTagFactory {
         f.msgType=FixTagRef.CANCEL_REQUEST;
         f.COrderId=clientOrderID;
         f.OMOrderId=orderManagerOrderID;
-        return f;
-    }
-
-    public static IFixTag makeCancelConfirmation(long clientOrderID, long orderManagerOrderID) {
-        FixTag f = new FixTag();
-        f.msgType=FixTagRef.EXECUTION_REPORT;
-        f.OMOrderId=orderManagerOrderID;
-        f.COrderId=clientOrderID;
-        f.ordStatus = FixTagRef.CANCELLED;
         return f;
     }
 
@@ -70,9 +62,6 @@ public class FixTagFactory {
                     break;
                 case"55":
                     result.ric=new Ric(tag_value[1]);
-                    break;
-                case"40":
-                    result.type=tag_value[1].charAt(0);
                     break;
             }
         }

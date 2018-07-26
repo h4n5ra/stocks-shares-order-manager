@@ -6,22 +6,34 @@ import java.util.ArrayList;
 import Ref.Instrument;
 
 /*
-	The Object that is an order. it is passed about between the ordermanager the client, the trader, etc.
- */
+ This class contains the description of orders and the manipulation that an order can go through.
+ Each order can have its own sublist of slices that is created using the methods in this class.
+ Each order can also have its own sublist of fills which are the partial fills of that orders slices.
+ The methods of this class are as follows:
+ sliceSize
+ newSlice
+ sizeFilled
+ sizeRemaining
+ price
+ createFill
+ cross
+*/
+
 public class Order implements Serializable{
 	public long id;
 	public Instrument instrument;
 	public double initialMarketPrice = 199;
 	public long clientOrderID;
 	public char side;
-	protected short orderRouter;
 	public int size;
-	protected double[] bestPrices;
-	protected int bestPriceCount;
-	protected long clientid;
-	public ArrayList<Order>slices;
-	public ArrayList<Fill>fills;
-	protected char OrdStatus='A'; //OrdStatus is Fix 39, 'A' is 'Pending New'
+    public ArrayList<Order>slices;
+    public ArrayList<Fill>fills;
+	public double[] bestPrices;
+	public int bestPriceCount;
+	public long clientid;
+	char OrdStatus='A';
+	boolean isRouted = false;
+	 //OrdStatus is Fix 39, 'A' is 'Pending New'
 	//Status state;
 
 	/*
@@ -39,7 +51,7 @@ public class Order implements Serializable{
 		returns the number of slices before the new slice was added !?
 	 */
 	public int newSlice(int sliceSize){
-		slices.add(new Order(id, clientOrderID,instrument,sliceSize, side));
+		slices.add(new Order(id, clientid, clientOrderID,instrument,sliceSize, side));
 		return slices.size()-1;
 	}
 
@@ -95,12 +107,11 @@ public class Order implements Serializable{
 	}
 
 	/*
-		compares to another order and attempts to match with it
-		if the order matches (i.e. one wants to sell x, one wants to buy x, and prices match) then then fill each other
-		//TODO optimise for loop to not make new variables every time
+		Compares to another order and attempts to match with it if the order matches (i.e. one wants to sell x,
+		one wants to buy x, and prices match) then then fill each other. The matchingOrder argument it takes in has
+		already been scanned in the class OrderManager that they do match before being sent into the function.
 	 */
 
-	//TODO: initialize values out side of the for-loops and just reset them inside of them.
 	public void cross(Order matchingOrder){
 		//pair slices first and then parent
 
@@ -141,7 +152,7 @@ public class Order implements Serializable{
 		}
 		if(sizeRemaining()>0){
 			for(Order matchingSlice:matchingOrder.slices){
-				matchSize =matchingSlice.sizeRemaining();
+				matchSize = matchingSlice.sizeRemaining();
 				if(matchSize ==0)continue;
 				size=sizeRemaining();
 				if(size<= matchSize){
@@ -172,7 +183,15 @@ public class Order implements Serializable{
 		//state=cancelled
 	}
 
-	public Order(long clientId, long clientOrderID, Instrument instrument, int size, char side){
+	public void setRouted() {
+		isRouted=true;
+	}
+
+	public void setNotRouted() {
+		isRouted=false;
+	}
+
+	public Order(long orderId, long clientId, long clientOrderID, Instrument instrument, int size, char side){
 		this.clientOrderID =clientOrderID;
 		this.size=size;
 		this.clientid=clientId;
@@ -180,11 +199,7 @@ public class Order implements Serializable{
 		fills=new ArrayList<Fill>();
 		slices=new ArrayList<Order>();
 		this.side = side;
+		this.id = orderId;
 	}
-}
-
-//TODO implement Basket orders?
-class Basket{
-	Order[] orders;
 }
 

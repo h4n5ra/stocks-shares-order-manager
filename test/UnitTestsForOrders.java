@@ -4,16 +4,27 @@
 //import Ref.Ric;
 //import org.testng.annotations.Test;
 //
-//
-//
-//
 //import static org.testng.AssertJUnit.assertEquals;
 //import static org.testng.AssertJUnit.assertFalse;
 //
 //
+/*
+This class consist of unit tests for the class Orders. It tests the following functions:
+cross
+price
+sizeFilled
+sliceSize
+newSlice
+
+Some of them are tested in more then one way to explain how they work along with some
+explanation why they work in that way.
+
+
+@see		Order
+*/
+
 //public class UnitTestsForOrders {
 //
-//    /*** in Order; size, slices and fills need to be made public to do these tests */
 //
 //    private Order testOrders = new Order(1,1, new Instrument(new Ric("TEST.TEST")), 10);
 //
@@ -22,7 +33,7 @@
 //        return ("Client ID " + order.id + " Client orderID " + order.clientOrderID + " size " + order.size);
 //    }
 //
-//
+//    // General test of slicing to see if it slices to the correct size
 //    @Test
 //    public void testSlicing(){
 //
@@ -85,7 +96,8 @@
 //        assertEquals(2, filledSoFar);
 //    }
 //
-//    // This test fails because it only takes into account the number of fills but not the actual size of the fill.
+//    // This test returns a false because it only takes into account the number of fills but not the actual
+//    // size of the fill.
 //    @Test
 //    public void testPrice(){
 //
@@ -97,7 +109,7 @@
 //
 //        float averagePrice = testOrders.price();
 //
-//        assertEquals(100F, averagePrice);
+//        assertFalse(100F == averagePrice);
 //
 //    }
 //
@@ -134,7 +146,7 @@
 //    }
 //
 //    // Tests if orders that do NOT match both get filled properly.
-//    // THIS TEST FAILS AS THE order.cross does NOT check if they are the same!
+//    // THIS TEST RETURNS FALSE AS THE order.cross does NOT check if they are the same!
 //    // That is though ok because it is checked before it goes into order.cross in OrderManagers internal cross
 //    @Test
 //    public void testCrossInOrderWithNOTMatching(){

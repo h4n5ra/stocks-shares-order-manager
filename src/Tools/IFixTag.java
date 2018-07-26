@@ -23,6 +23,4 @@ public interface IFixTag {
     int getQuantity();
 
     Ric getRic();
-
-    char getType();
 }

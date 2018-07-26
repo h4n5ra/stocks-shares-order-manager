@@ -11,6 +11,13 @@ import OrderRouter.Router;
 import Ref.Instrument;
 import Ref.Ric;
 import Tools.MyLogger;
+import org.apache.log4j.Level;
+
+/* Implements the interface Router and runs as a thread. Reads the input stream that is coming in and selects what to do
+depending on the message it receives from the OrderManager. There is a method in the interface Router that should be
+implemented here but it should be sending a cancel order back to the OrderManager after receiving it from the outside
+world that has not yet been implemented.
+ */
 
 public class SampleRouter extends Thread implements Router{
 	private static final Random RANDOM_NUM_GENERATOR=new Random();
@@ -35,8 +42,6 @@ public class SampleRouter extends Thread implements Router{
 			// OrderManager connects us the port of this SampleRouter.
 			orderManagerConnection =ServerSocketFactory.getDefault().createServerSocket(port).accept();
 
-			// Running this while-loop indefinitely. It checks for an inputstream and if it doesn't find one it sleeps
-			// 100ms
 			int count = 0;
 			while(true && (count<30 || !stop)) {
 
@@ -46,11 +51,7 @@ public class SampleRouter extends Thread implements Router{
 					is=new ObjectInputStream(orderManagerConnection.getInputStream());
 					Router.api methodName=(Router.api)is.readObject();
 					MyLogger.out("Recieved message from OM:     "+methodName);
-
-					// We switch on the method name. Note there is nothing done here if it should cancel the order
-					// The cancel method has not been implemented but it is define in the Router interface.
-					// TODO: Put a default case to do, ie. cancel in the interface, but never used...
-					switch(methodName){
+					switch(methodName) {
 						case routeOrder:
 							routeOrder(is.readLong(),is.readInt(),is.readInt(),(Instrument)is.readObject());
 							break;
@@ -59,14 +60,14 @@ public class SampleRouter extends Thread implements Router{
 							break;
 					}
 				}else{
-					Thread.sleep(500);
+					Thread.sleep(50);
 					count++;
 				}
 			}
 			// Catch exceptions if we can't connect to the port through OrderManager
 		} catch (IOException | ClassNotFoundException | InterruptedException e) {
 			// TODO Auto-generated catch block
-			e.printStackTrace();
+			MyLogger.out(e.getMessage(), Level.FATAL);
 		}
 		MyLogger.out("Router is free at last");
 	}
@@ -78,15 +79,13 @@ public class SampleRouter extends Thread implements Router{
 		int fillSize=RANDOM_NUM_GENERATOR.nextInt(size);
 		//TODO have this similar to the market price of the instrument
 
-//        OrderManager.makeRouterRequest();
-		double fillPrice=199;//*RANDOM_NUM_GENERATOR.nextDouble();
-		Thread.sleep(42);
+		Thread.sleep(10);
 		os=new ObjectOutputStream(orderManagerConnection.getOutputStream());
 		os.writeObject("newFill");
 		os.writeLong(id);
 		os.writeInt(sliceId);
 		os.writeInt(fillSize);
-		os.writeDouble(fillPrice);
+		os.writeDouble(199);
 		os.flush();
 	}
 
@@ -101,12 +100,11 @@ public class SampleRouter extends Thread implements Router{
 	// price of this order of this size.
 	@Override
 	public void priceAtSize(long id, int sliceId,Instrument i, int size) throws IOException{
-//        OrderManager.makeRouterRequest();
 		os=new ObjectOutputStream(orderManagerConnection.getOutputStream());
 		os.writeObject("bestPrice");
 		os.writeLong(id);
 		os.writeInt(sliceId);
-		os.writeDouble(199);//*RANDOM_NUM_GENERATOR.nextDouble());
+		os.writeDouble(199);
 		os.flush();
 	}
 }

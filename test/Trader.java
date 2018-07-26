@@ -11,6 +11,14 @@ import OrderManager.Order;
 import OrderManager.OrderManager;
 import TradeScreen.TradeScreen;
 import Tools.MyLogger;
+import org.apache.log4j.Level;
+
+/*
+Trader is a class that has its own run method as it extends threads. It mocks how a trader should act
+by reading it from an input stream data and handle it appropriately according to the message received.
+If it accepts the order it adds it to its list of orders, otherwise it is writing to the output stream
+different messages to be executed by the OrderManager.
+*/
 
 public class Trader extends Thread implements TradeScreen {
 	private HashMap<Long,Order> orders=new HashMap<Long,Order>();
@@ -37,7 +45,7 @@ public class Trader extends Thread implements TradeScreen {
 			int count = 0;
             // Keep running and waiting for any data streamed in.
 
-			while(count<50 || !stop){
+			while(true && (count<50 || !stop)){
 
 				if(0<s.available()){
 				    // If data available,
@@ -59,17 +67,19 @@ public class Trader extends Thread implements TradeScreen {
 							is.readLong();
 							is.readObject();
 							break; //TODO
+						case cancel:
+							cancel(is.readLong(), (Order)is.readObject());
+							break; //TODO
 					}
 				}else{
 					//MyLogger.out("Trader Waiting for data to be available - sleep 1s");
 					count++;
-					Thread.sleep(500);
+					Thread.sleep(50);
 				}
 			}
 			MyLogger.out("Free from this hellish prison");
 		} catch (IOException | ClassNotFoundException | InterruptedException e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
+            MyLogger.out(e.getMessage(), Level.FATAL);
 		}
 	}
 
@@ -84,7 +94,6 @@ public class Trader extends Thread implements TradeScreen {
 	@Override
 	public void acceptOrder(long id) throws IOException {
 		os=new ObjectOutputStream(omConn.getOutputStream());
-//        OrderManager.makeTraderRequest();
 		os.writeObject("acceptOrder");
 		os.writeLong(id);
 		os.flush();
@@ -93,7 +102,6 @@ public class Trader extends Thread implements TradeScreen {
 	@Override
 	public void sliceOrder(long id, int sliceSize) throws IOException {
 		os=new ObjectOutputStream(omConn.getOutputStream());
-//        OrderManager.makeTraderRequest();
 		os.writeObject("sliceOrder");
 		os.writeLong(id);
 		os.writeInt(sliceSize);
@@ -104,5 +112,9 @@ public class Trader extends Thread implements TradeScreen {
 	public void price(long id,Order o) throws InterruptedException, IOException {
 		//TODO should update the trade screen
 		sliceOrder(id,orders.get(id).sizeRemaining()/2);
+	}
+
+	private void cancel(long id, Order o) {
+		orders.remove(id);
 	}
 }

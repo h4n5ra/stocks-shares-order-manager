@@ -11,8 +11,13 @@ import OrderManager.Order;
 import Ref.Instrument;
 import Ref.Ric;
 import Tools.*;
+import org.apache.log4j.Level;
 
 import static java.lang.Thread.sleep;
+
+/* Sample client implements the client interface. It uses the messageHandler to decide what to do with each type of
+message it receives through the fix tag.
+ */
 
 public class SampleClient extends Mock implements Client {
 
@@ -20,9 +25,9 @@ public class SampleClient extends Mock implements Client {
     //in this instance these are hard-coded because this is a test, but they (presumably) need to be able to change.
     //The socket is just a way for it to connect for the order manager.
     //Out queue stores the order ID as a key and the order itself as a value.
-    //id just stores an id number for the messages so that unique output messages are identifiable? I think?
+    //id just stores an id number for the messages so that unique output messages are identifiable
     private static final Instrument[] INSTRUMENTS = {new Instrument(new Ric("VOD.L")), new Instrument(new Ric("BP.L")), new Instrument(new Ric("BT.L"))};
-    private final HashMap<String,NewOrderSingle> OUT_QUEUE = new HashMap(); //queue for outgoing orders
+    private final HashMap<String, NewOrderSingle> OUT_QUEUE = new HashMap(); //queue for outgoing orders
 
     private int id = 0; //message id number
     private Socket orderManagerConnection; //connection to order manager
@@ -45,13 +50,11 @@ public class SampleClient extends Mock implements Client {
     public int sendOrder(int size, int instrid, char side) throws IOException {
         NewOrderSingle nos = new NewOrderSingle(size, instrid, INSTRUMENTS[instrid]);
 
-        OUT_QUEUE.put(""+id, nos);
-//        OrderManager.makeClientRequest();
-        //ObjectOutputStream is a class from java, not one that they've written. This seems to just output messages
-        //about this order?
+        OUT_QUEUE.put("" + id, nos);
+
         if (orderManagerConnection.isConnected()) {
             ObjectOutputStream os = new ObjectOutputStream(orderManagerConnection.getOutputStream());
-            IFixTag tag = FixTagFactory.makeNewOrderSingle(id,INSTRUMENTS[instrid].toString(),side,size);
+            IFixTag tag = FixTagFactory.makeNewOrderSingle(id, INSTRUMENTS[instrid].toString(), side, size);
             MyLogger.out("Sent new order single to OM:  " + tag.getCOrderId());
             tag.send(os);
             os.flush();
@@ -62,40 +65,19 @@ public class SampleClient extends Mock implements Client {
 
     @Override
     public void sendCancel(int idToCancel) throws IOException {
-        //show("sendCancel:  id=" + idToCancel);
+        if (OUT_QUEUE.get("" + idToCancel).getStatus() == FixTagRef.PENDING_NEW) {
+            MyLogger.out("Cannot cancel pending new order");
+            return;
+        }
         if (orderManagerConnection.isConnected()) {
             ObjectOutputStream os = new ObjectOutputStream(orderManagerConnection.getOutputStream());
-            long OMOrderID = OUT_QUEUE.get(""+idToCancel).getOMOrderID();
+            long OMOrderID = OUT_QUEUE.get("" + idToCancel).getOMOrderID();
             IFixTag tag = FixTagFactory.makeCancelRequest(idToCancel, OMOrderID);
 //            OrderManager.makeClientRequest();
             tag.send(os);
-            MyLogger.out("Sent cancel request to OM:    " + tag.getCOrderId() + " " +tag.getOMOrderId());
+            MyLogger.out("Sent cancel request to OM:    " + tag.getCOrderId() + " " + tag.getOMOrderId());
             os.flush();
         }
-    }
-
-    //The method is here so we can code to the interface, doesn't actually do anything yet, other than show the order.
-    //Again, middle clicking returns no usages.
-    //TODO: make this method actually send a partial fill order.
-    @Override
-    public void partialFill(Order order) {
-        show("partialFill: " + order);
-    }
-
-    //No usages again, but this method gets an order and removes it from the hashmap that represents the out_queue.
-    //TODO: test this, make sure it works.
-    @Override
-    public void fullyFilled(Order order) {
-        show("fullyFilled: " + order);
-        OUT_QUEUE.remove(""+order.clientOrderID);
-    }
-
-    //Same as above; no usages, but removes an order if it's been cancelled.
-    //TODO: test this, make sure it works.
-    @Override
-    public void cancelled(Order order) {
-        show("cancelled: " + order);
-        OUT_QUEUE.remove(""+order.clientOrderID);
     }
 
     @Override
@@ -103,34 +85,42 @@ public class SampleClient extends Mock implements Client {
         //Method gets an input stream from the connection to the order manager; reads it as a string so that we know
         //a fix is happening, and which thread is responsible. The fixes are tagged into a list, presumably they're seperated
         //by semi colons, which is how the regex splits them.
-        ObjectInputStream is;
-        try {
-            int count = 0;
-            while (count < 50 || !stop) {
-                //is.wait(); //this throws an exception!!
-                while (0 < orderManagerConnection.getInputStream().available()) {
-                    is = new ObjectInputStream(orderManagerConnection.getInputStream());
-                    IFixTag fixTag = FixTagFactory.read(is);
-                    if (fixTag.getMsgType() == FixTagRef.EXECUTION_REPORT) {
-                        recieveExecutionUpdate(fixTag);
-                    } else {
-                        MyLogger.out("Unknown fixTag recieved");
-                    }
-                }
-                //sleep(500);
-                count++;
-            }
-        } catch (IOException | ClassNotFoundException e) {
-            e.printStackTrace();
-        }
+        (new MessageHandler()).start();
     }
 
     void recieveExecutionUpdate(IFixTag tag) {
-        MyLogger.out("Recieved update from OM:      " + tag.getCOrderId() + " " + tag.getOMOrderId()+ " status: " + tag.getOrdStatus());
-        NewOrderSingle nos = OUT_QUEUE.get(""+tag.getCOrderId());
+        MyLogger.out("Recieved update from OM:      " + tag.getCOrderId() + " " + tag.getOMOrderId() + " " + tag.getOrdStatus());
+        NewOrderSingle nos = OUT_QUEUE.get("" + tag.getCOrderId());
         nos.setOMOrderID(tag.getOMOrderId());
-        if(tag.getOrdStatus()==FixTagRef.CANCELLED) {
+        nos.setStatus(tag.getOrdStatus());
+        if (tag.getOrdStatus() == FixTagRef.CANCELLED) {
             OUT_QUEUE.remove(tag.getCOrderId());
+            MyLogger.out("Order cancelled: " + tag.getCOrderId() + " " + tag.getOMOrderId());
+        }
+    }
+
+    public class MessageHandler extends Thread {
+        public void run() {
+            ObjectInputStream is;
+            try {
+                int count = 0;
+                while (count < 50 || !stop) {
+                    //is.wait(); //this throws an exception!!
+                    while (0 < orderManagerConnection.getInputStream().available()) {
+                        is = new ObjectInputStream(orderManagerConnection.getInputStream());
+                        IFixTag fixTag = FixTagFactory.read(is);
+                        if (fixTag.getMsgType() == FixTagRef.EXECUTION_REPORT) {
+                            recieveExecutionUpdate(fixTag);
+                        } else {
+                            MyLogger.out("Unknown fixTag recieved");
+                        }
+                    }
+                    sleep(50);
+                    count++;
+                }
+            } catch (IOException | ClassNotFoundException | InterruptedException e) {
+                MyLogger.out(e.getMessage(), Level.FATAL);
+            }
         }
     }
 }

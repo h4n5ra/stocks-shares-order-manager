@@ -22,8 +22,6 @@ public class FixTag implements IFixTag {
     char side;
     int quantity;
     Ric ric;
-    char type;
-
     public char getMsgType() {
         return msgType;
     }
@@ -52,9 +50,6 @@ public class FixTag implements IFixTag {
         return ric;
     }
 
-    public char getType() {
-        return type;
-    }
 
     FixTag() {
         msgType = ERRC;
@@ -64,7 +59,6 @@ public class FixTag implements IFixTag {
         side = ERRC;
         quantity = (int)ERRL;
         ric = ERRRIC;
-        type = ERRC;
     }
 
     public void send(ObjectOutputStream stream) throws IOException {

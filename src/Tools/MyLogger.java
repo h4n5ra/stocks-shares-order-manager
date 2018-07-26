@@ -33,12 +33,16 @@ public class MyLogger {
 
     public static void out (String message){
         Logger logger = getLogger(getClassName());
-        logger.log(Level.WARN, message);
+        logger.log(Level.INFO, message);
         System.out.println(getClassName() + ": " + message);
     }
 
     public static void out (String message, Level logLevel){
         Logger logger = getLogger(getClassName());
         logger.log(logLevel, message);
+        if(logLevel == Level.WARN || logLevel == Level.ERROR || logLevel == Level.FATAL)
+            System.err.println(getClassName() + ": " + message);
+        else
+            System.out.println(getClassName() + ": " + message);
     }
 }

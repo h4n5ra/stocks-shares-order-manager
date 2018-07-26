@@ -9,13 +9,14 @@ import OrderManager.OrderManager;
 import Ref.Instrument;
 import Ref.Ric;
 import Tools.MyLogger;
+import org.apache.log4j.Level;
 
-//this class provides a runnable test program that runs a manager and some clients and routers
+// This class provides a runnable test program that runs a manager and some clients and routers
 public class Main{
 
 	// Get date for log files.
 	static{
-		SimpleDateFormat dateFormat = new SimpleDateFormat("dd-MM-yyyy hhmmss");
+		SimpleDateFormat dateFormat = new SimpleDateFormat("dd-MM-yyyy HHmmss");
 		System.setProperty("current_date", dateFormat.format(new Date()));
 	}
 
@@ -69,7 +70,6 @@ public class Main{
             mo.join();
             System.out.println((float) (System.nanoTime() - time) / (1000 * 1000 * 1000));
 	}
-
 }
 
 
@@ -82,31 +82,36 @@ class MockClient extends Thread{
 		this.port=port;
 		this.setName(name);
 	}
-	public void run(){
+	public void run() {
 		int size = RANDOM_NUM_GENERATOR.nextInt(5000);
 		int instid = RANDOM_NUM_GENERATOR.nextInt(3);
 		try {
 			SampleClient client=new SampleClient(port, true);
+            client.messageHandler();
 			if(port==2000){//makes one of the clients in the main method do something different to the other one
 				//TODO why does this take an arg?
 				client.sendOrder(size, instid, '2');
+				client.sendOrder(size, instid, '1');
+				client.sendOrder(size, instid, '2');
 				int id=client.sendOrder(size, instid,'2');
+				Thread.sleep(300);
 				client.sendCancel(0);
 				//TODO run tests on sendCancel in MockClient
-				// client.sendCancel(id);
-				client.messageHandler();
+				 client.sendCancel(id);
 			}else{
 				client.sendOrder(size, instid, '2');
-				client.messageHandler();
+				client.sendOrder(size, instid, '1');
+				client.sendOrder(size, instid, '2');
 			}
 		} catch (IOException e) {
-			e.printStackTrace();//TODO proper handling of IOException in MockClient
+            MyLogger.out(e.getMessage(), Level.FATAL);
+		} catch (InterruptedException e) {
+			e.printStackTrace();
 		}
 	}
 }
 
 //MockOm is a thread that makes an ordermanager and runs it.
-//ordermanager runs in it's constructor which is rather silly!
 class MockOM extends Thread{
 	InetSocketAddress[] clients;
 	InetSocketAddress[] routers;
@@ -125,7 +130,7 @@ class MockOM extends Thread{
 			//In order to debug constructors you can do F5 F7 F5
 			new OrderManager(routers,clients,trader,liveMarketData, true).mainLoop();//the manager runs forever in its constructor.
 		}catch(IOException | ClassNotFoundException | InterruptedException ex){
-			MyLogger.out(MockOMHH.class.getName());//.log(Level.SEVERE,null,ex);
+			MyLogger.out(ex.getMessage(), Level.FATAL);//.log(Level.SEVERE,null,ex);
 		}
 	}
 }

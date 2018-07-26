@@ -2,16 +2,20 @@ import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.InputMismatchException;
 import java.util.Scanner;
 
 import LiveMarketData.LiveMarketData;
 import OrderManager.OrderManager;
 import Tools.MyLogger;
+import org.apache.log4j.Level;
 
-//this class provides a runnable test program that runs a manager and some clients and routers
+/*this class provides a runnable test program that runs a manager and some clients and routers using command line
+arguments about the orders that the clients make.
+ */
 public class MainHH{
 
-	// Get date for log files.
+	// gets date for log files.
 	static{
 		SimpleDateFormat dateFormat = new SimpleDateFormat("dd-MM-yyyy hhmmss");
 		System.setProperty("current_date", dateFormat.format(new Date()));
@@ -19,14 +23,13 @@ public class MainHH{
 
 	public static void main(String[] args) throws InterruptedException {
 		MyLogger.init();
-		long time = System.nanoTime();
-		System.out.println(Trader.class);
+		//long time = System.nanoTime();
 		MyLogger.out("TEST: this program tests ordermanager");
 
 		//Mockclient creates a command-line 'menu' which asks user for order information
 		MockClientHH mc1 = new MockClientHH("Client 1", 2000);
 
-		//makes the socket for the ordermanager to connect to the clients. note the matching ports
+		//makes the socket for the ordermanager to connect to the clients. note the port matches the client port
 		InetSocketAddress[] clients = {new InetSocketAddress("localhost", 2000)};
 
 		//makes 2 "router threads" and starts them.
@@ -37,7 +40,7 @@ public class MainHH{
 		SampleRouter sr2 = (new SampleRouter("Router BATE", 2011, false));
 		sr2.start();
 
-		//makes the socket for the ordermanager to connect to the routers. note the matching ports
+		//makes the socket for the ordermanager to connect to the routers. note the ports match the router ports
 		InetSocketAddress[] routers = {new InetSocketAddress("localhost", 2010), new InetSocketAddress("localhost", 2011)};
 
 		//makes a trader thread and starts it.
@@ -52,17 +55,19 @@ public class MainHH{
 		//makes a SampleLiveMarketData object that implements the LiveMarketData interface.
 		//is used to set the price on orders
 		LiveMarketData liveMarketData = new SampleLiveMarketData();
-		//start the order manager thread
+
+		//creates and starts the order manager thread
 		MockOMHH mo = (new MockOMHH("Order Manager", routers, clients, trader, liveMarketData));
 		mo.start();
 
+		// starts remaining threads
         mc1.start();
 		mc1.join();
 		sr1.join();
 		sr2.join();
 		tr.join();
 		mo.join();
-		System.out.println((float) (System.nanoTime()-time)/(1000*1000*1000));
+		//System.out.println((float) (System.nanoTime()-time)/(1000*1000*1000));
 	}
 }
 
@@ -88,8 +93,9 @@ class MockClientHH extends Thread {
         SampleClient client = null;
         try {
             client = new SampleClient(port, false);
+            client.messageHandler();
         } catch (IOException e) {
-            e.printStackTrace();
+            MyLogger.out(e.getMessage(), Level.FATAL);
         }
         while (true) {
             try {
@@ -102,33 +108,53 @@ class MockClientHH extends Thread {
                     option = scanner.next().toLowerCase(); //makes option case-insensitive
                     if (option.equals("buy")) {
                         System.out.print("Enter buy order size: ");
-                        size = scanner.nextInt();
-                        System.out.print("Enter instrument ID: ");
-                        instrid = scanner.nextInt();
-                        client.sendOrder(size, instrid, '1');
-                        //client.messageHandler();
+                        try {
+                            size = scanner.nextInt();
+                            System.out.print("Enter instrument ID: ");
+                            instrid = scanner.nextInt();
+                            client.sendOrder(size, instrid, '1');
+                        }catch (InputMismatchException e){
+                            System.out.println("Please enter a valid buy order");
+                            System.out.println("Order size and instrument ID must be integers");
+                            System.out.println("Restarting form...");
+                            scanner.reset();
+                        }
                     } else if (option.equals("sell")) {
-                        System.out.print("Enter sell order size: ");
-                        size = scanner.nextInt();
-                        System.out.print("Enter instrument ID: ");
-                        instrid = scanner.nextInt();
-                        client.sendOrder(size, instrid, '2');
-                        //client.messageHandler();
+                        try{
+                            System.out.print("Enter sell order size: ");
+                            size = scanner.nextInt();
+                            System.out.print("Enter instrument ID: ");
+                            instrid = scanner.nextInt();
+                            client.sendOrder(size, instrid, '2');
+                        }catch (InputMismatchException e){
+                            System.out.println("Please enter a valid sell order");
+                            System.out.println("Order size and instrument ID must be integers");
+                            System.out.println("Restarting form...");
+                            scanner.reset();
+                        }
                     } else if (option.equals("cancel")) {
-                        System.out.print("Enter order ID for the order you would like to cancel: ");
-                        orderid = scanner.nextInt();
-                        client.sendCancel(orderid);
-                        //client.messageHandler();
+                        try {
+                            System.out.print("Enter order ID for the order you would like to cancel: ");
+                            orderid = scanner.nextInt();
+                            client.sendCancel(orderid);
+                        }catch(InputMismatchException e){
+                            System.out.println("Please enter an integer as the order ID");
+                            System.out.println("Restarting form...");
+                            scanner.reset();
+                        }
                     } else if (option.equals("exit")) {
                         System.exit(0);
+                    } else {
+                        System.out.println("Please enter a valid command");
+                        System.out.println("Either buy, sell, cancel or exit");
+                        System.out.println("Restarting form...");
+                        scanner.reset();
                     }
                     System.out.println("");
-                    Thread.sleep(5000);
+                    Thread.sleep(4000);
                 }
-            } catch (IOException e) {
-                e.printStackTrace();
-            } catch (InterruptedException e) {
-                e.printStackTrace();
+            } catch (IOException | InterruptedException e) {
+                MyLogger.out(e.getMessage(), Level.FATAL);
             }
         }
     }
@@ -155,7 +181,7 @@ class MockOMHH extends Thread{
 			OrderManager m = new OrderManager(routers,clients,trader,liveMarketData, false);//the manager runs forever in its constructor.
             m.mainLoop();
 		}catch(IOException | ClassNotFoundException | InterruptedException ex){
-			MyLogger.out(MockOMHH.class.getName());//.log(Level.SEVERE,null,ex);
+			MyLogger.out(ex.getMessage(), Level.FATAL);//.log(Level.SEVERE,null,ex);
 		}
 	}
 }
