@@ -93,7 +93,6 @@ class MockClientHH extends Thread {
         SampleClient client = null;
         try {
             client = new SampleClient(port, false);
-            client.messageHandler();
         } catch (IOException e) {
             MyLogger.out(e.getMessage(), Level.FATAL);
         }
@@ -118,6 +117,7 @@ class MockClientHH extends Thread {
                             System.out.println("Order size and instrument ID must be integers");
                             System.out.println("Restarting form...");
                             scanner.reset();
+                            MyLogger.out("Menu restarted");
                         }
                     } else if (option.equals("sell")) {
                         try{
@@ -131,6 +131,7 @@ class MockClientHH extends Thread {
                             System.out.println("Order size and instrument ID must be integers");
                             System.out.println("Restarting form...");
                             scanner.reset();
+                            MyLogger.out("Menu restarted");
                         }
                     } else if (option.equals("cancel")) {
                         try {
@@ -141,14 +142,17 @@ class MockClientHH extends Thread {
                             System.out.println("Please enter an integer as the order ID");
                             System.out.println("Restarting form...");
                             scanner.reset();
+                            MyLogger.out("Menu restarted");
                         }
                     } else if (option.equals("exit")) {
                         System.exit(0);
+                        MyLogger.out("Programme successfully exited");
                     } else {
                         System.out.println("Please enter a valid command");
                         System.out.println("Either buy, sell, cancel or exit");
                         System.out.println("Restarting form...");
                         scanner.reset();
+                        MyLogger.out("Menu restarted");
                     }
                     System.out.println("");
                     Thread.sleep(4000);
@@ -161,7 +165,6 @@ class MockClientHH extends Thread {
 }
 
 //MockOm is a thread that makes an ordermanager and runs it.
-//ordermanager runs in it's constructor which is rather silly!
 class MockOMHH extends Thread{
 	InetSocketAddress[] clients;
 	InetSocketAddress[] routers;
@@ -177,11 +180,10 @@ class MockOMHH extends Thread{
 	@Override
 	public void run(){
 		try{
-			//In order to debug constructors you can do F5 F7 F5
 			OrderManager m = new OrderManager(routers,clients,trader,liveMarketData, false);//the manager runs forever in its constructor.
             m.mainLoop();
-		}catch(IOException | ClassNotFoundException | InterruptedException ex){
-			MyLogger.out(ex.getMessage(), Level.FATAL);//.log(Level.SEVERE,null,ex);
+		}catch(IOException | ClassNotFoundException | InterruptedException e){
+			MyLogger.out(e.getMessage(), Level.FATAL);
 		}
 	}
 }

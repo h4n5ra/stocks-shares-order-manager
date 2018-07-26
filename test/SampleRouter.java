@@ -20,11 +20,11 @@ world that has not yet been implemented.
  */
 
 public class SampleRouter extends Thread implements Router{
-	private static final Random RANDOM_NUM_GENERATOR=new Random();
-	private static final Instrument[] INSTRUMENTS={new Instrument(new Ric("VOD.L")), new Instrument(new Ric("BP.L")), new Instrument(new Ric("BT.L"))};
 	private Socket orderManagerConnection;
 	private int port;
 	private boolean stop;
+	private ObjectInputStream is;
+	private ObjectOutputStream os;
 
 	// Initialises the sample router with a name and a port.
 	public SampleRouter(String name,int port, boolean stop){
@@ -33,24 +33,20 @@ public class SampleRouter extends Thread implements Router{
 		this.stop = stop;
 	}
 
-	ObjectInputStream is;
-	ObjectOutputStream os;
-
 	public void run() {
-		//OM will connect to us
 		try {
 			// OrderManager connects us the port of this SampleRouter.
-			orderManagerConnection =ServerSocketFactory.getDefault().createServerSocket(port).accept();
+			orderManagerConnection=ServerSocketFactory.getDefault().createServerSocket(port).accept();
 
 			int count = 0;
-			while(true && (count<30 || !stop)) {
+			while(count<30 || !stop) {
 
-				if(0< orderManagerConnection.getInputStream().available()){
-					// If the input stream does contain something we get the method from in and tell the user what
+				if(0 < orderManagerConnection.getInputStream().available()){
+					// If the input stream does contain something we get the object and read it
 					// method we found and do different action depending on it, hence the switch statement.
 					is=new ObjectInputStream(orderManagerConnection.getInputStream());
 					Router.api methodName=(Router.api)is.readObject();
-					MyLogger.out("Recieved message from OM:     "+methodName);
+					MyLogger.out("Received message from OM:     "+methodName);
 					switch(methodName) {
 						case routeOrder:
 							routeOrder(is.readLong(),is.readInt(),is.readInt(),(Instrument)is.readObject());
@@ -66,7 +62,6 @@ public class SampleRouter extends Thread implements Router{
 			}
 			// Catch exceptions if we can't connect to the port through OrderManager
 		} catch (IOException | ClassNotFoundException | InterruptedException e) {
-			// TODO Auto-generated catch block
 			MyLogger.out(e.getMessage(), Level.FATAL);
 		}
 		MyLogger.out("Router is free at last");
@@ -76,8 +71,8 @@ public class SampleRouter extends Thread implements Router{
 	// random price and a random size for the fill.
 	@Override
 	public void routeOrder(long id,int sliceId,int size,Instrument i) throws IOException, InterruptedException{
-		int fillSize=RANDOM_NUM_GENERATOR.nextInt(size);
-		//TODO have this similar to the market price of the instrument
+	    //TODO: set fill size
+		int fillSize = 0;
 
 		Thread.sleep(10);
 		os=new ObjectOutputStream(orderManagerConnection.getOutputStream());

@@ -19,40 +19,37 @@ import static java.lang.Thread.sleep;
 message it receives through the fix tag.
  */
 
-public class SampleClient extends Mock implements Client {
+public class SampleClient implements Client {
 
-    //Initializing member variables - first is just a random number. Second is the instruments associated with the client;
-    //in this instance these are hard-coded because this is a test, but they (presumably) need to be able to change.
-    //The socket is just a way for it to connect for the order manager.
-    //Out queue stores the order ID as a key and the order itself as a value.
-    //id just stores an id number for the messages so that unique output messages are identifiable
+    // a list of instruments
+    // TODO: add more instruments
     private static final Instrument[] INSTRUMENTS = {new Instrument(new Ric("VOD.L")), new Instrument(new Ric("BP.L")), new Instrument(new Ric("BT.L"))};
-    private final HashMap<String, NewOrderSingle> OUT_QUEUE = new HashMap(); //queue for outgoing orders
-
-    private int id = 0; //message id number
+    //stores the order ID as a key and the order itself as a value.
+    private final HashMap<String, NewOrderSingle> OUT_QUEUE = new HashMap();
+    //id stores an id number for the messages so that unique output messages are identifiable
+    private int id = 0;
     private Socket orderManagerConnection; //connection to order manager
     private boolean stop;
 
     //All this constructor does is accept a connection to the order manager and print out the port which it connected to.
     public SampleClient(int port, boolean stop) throws IOException {
-        //OM will connect to us
         this.stop = stop;
         orderManagerConnection = new ServerSocket(port).accept();
         MyLogger.out("OM connected to client port " + port);
     }
 
-    //The random.nextInt method just returns a random number between 0 and the argument inclusive;
-    //so here the sendOrder method chooses a random instrument from the list and assigns it to the field instrument.
-    //NewOrderSingle is a class that stores an order with a size, a price and an instrument. Here the size is set as
-    //random between 0 and 5000, the id is set as a random between 0 and 3, and the instrument is set as above.
-    //A new order (NewOrderSingle Object) is created with these parameter.
     @Override
     public int sendOrder(int size, int instrid, char side) throws IOException {
+        //NewOrderSingle is a class that stores an order with a size, instrument ID and buy/sell.
+        //the ID of the instrument is its position in the instrument[] array
+        //TODO: implement RIC code instead of instrument ID
         NewOrderSingle nos = new NewOrderSingle(size, instrid, INSTRUMENTS[instrid]);
 
+        //queues the order
         OUT_QUEUE.put("" + id, nos);
 
         if (orderManagerConnection.isConnected()) {
+            //sends FixTag object to the order manager
             ObjectOutputStream os = new ObjectOutputStream(orderManagerConnection.getOutputStream());
             IFixTag tag = FixTagFactory.makeNewOrderSingle(id, INSTRUMENTS[instrid].toString(), side, size);
             MyLogger.out("Sent new order single to OM:  " + tag.getCOrderId());
@@ -73,7 +70,7 @@ public class SampleClient extends Mock implements Client {
             ObjectOutputStream os = new ObjectOutputStream(orderManagerConnection.getOutputStream());
             long OMOrderID = OUT_QUEUE.get("" + idToCancel).getOMOrderID();
             IFixTag tag = FixTagFactory.makeCancelRequest(idToCancel, OMOrderID);
-//            OrderManager.makeClientRequest();
+//          OrderManager.makeClientRequest();
             tag.send(os);
             MyLogger.out("Sent cancel request to OM:    " + tag.getCOrderId() + " " + tag.getOMOrderId());
             os.flush();
