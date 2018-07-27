@@ -23,7 +23,6 @@ import static java.lang.Thread.sleep;
 the market itself. It reads and writes to output/input streams to communicate to the trader, the routers and the clients
 through socket connections.
  */
-
 public class OrderManager {
 
     /*
@@ -31,9 +30,9 @@ public class OrderManager {
      */
 
     private static LiveMarketData liveMarketData;
-    private HashMap<Long, Order> orders = new HashMap<Long, Order>(); //debugger will do this line as it gives state to the object
+    private HashMap<Integer, Order> orders = new HashMap<Integer, Order>();
     //currently recording the number of new order messages we get. TODO why? use it for more?
-    private long id = 0;
+    private int id = 0;
     private Socket[] orderRouters;
     private Socket[] clients;
     private Socket trader;
@@ -80,57 +79,46 @@ public class OrderManager {
      * 5) Processes messages (scroll down for more detail).
      * */
     public OrderManager(InetSocketAddress[] orderRouters, InetSocketAddress[] clients,
-                        InetSocketAddress trader, LiveMarketData liveMarketData, boolean stop)
-            throws IOException, ClassNotFoundException, InterruptedException {
+                        InetSocketAddress trader, LiveMarketData liveMarketData, boolean stop) throws InterruptedException {
         this.liveMarketData = liveMarketData;
         this.trader = connect(trader);
-
         this.orderRouters = new Socket[orderRouters.length];
-        initialiseSockets(this.orderRouters, orderRouters);
-
         this.clients = new Socket[clients.length];
+        this.stop = stop;
 
+        initialiseSockets(this.orderRouters, orderRouters);
         initialiseSockets(this.clients, clients);
-
-        this.stop= stop;
     }
 
     public void mainLoop()  {
         // Main loop of the manager.
         try {
-            long count = 0;
+            int count = 0;
             while (count < 50 || !stop) {
-                long start = System.nanoTime();
                 clientLoop();
-                long duration = (System.nanoTime() - start) / 1;
                 routerLoop();
                 traderLoop();
                 count++;
                 sleep(50);
-
             }
-            System.out.println("MainLoop Order Manager escaped");
         }
         catch (IOException | ClassNotFoundException | InterruptedException e){
             MyLogger.out(e.getMessage(), Level.FATAL);
         }
     }
 
+    // Checks if there is any data in any of the sockets.
     private void clientLoop() throws IOException, ClassNotFoundException {
-        // Check if there is any data in any of the sockets.
-//        if(!clientRequest)
-//            return;
 
         for (int clientId = 0; clientId < this.clients.length; clientId++) {
             Socket client = this.clients[clientId];
-            // Check if there is any data to be read.
             if (client.getInputStream().available() > 0) {
 
                 inputStream = new ObjectInputStream(client.getInputStream());
-                IFixTag fixTag = FixTagFactory.read(inputStream);
+                IFixTag fixTag = FixTagFactory.read(inputStream); //gets the fixtag for the client order
                 switch(fixTag.getMsgType()) {
                     case FixTagRef.NEW_ORDER_SINGLE:
-                        MyLogger.out("Recieved NOS from client:     " + fixTag.getCOrderId() + " " + id);
+                        MyLogger.out("Received New Single Order from client:     " + fixTag.getCOrderId() + " " + id);
                         newOrder(clientId,fixTag.getCOrderId(),fixTag.getRic(),fixTag.getSide(),fixTag.getQuantity());
                         break;
                     case FixTagRef.CANCEL_REQUEST:
@@ -156,7 +144,7 @@ public class OrderManager {
 
                 switch (method) {
                     case "bestPrice":
-                        long orderId = inputStream.readLong();
+                        int orderId = inputStream.readInt();
                         int sliceId = inputStream.readInt();
                         Order o = orders.get(orderId);
                         if(o==null) {
@@ -170,7 +158,7 @@ public class OrderManager {
                             reallyRouteOrder(sliceId, slice);
                         break;
                     case "newFill":
-                        orderId = inputStream.readLong();
+                        orderId = inputStream.readInt();
                         o = orders.get(orderId);
                         newFill(orderId, inputStream.readInt(), inputStream.readInt(),
                                 inputStream.readDouble());
@@ -194,16 +182,16 @@ public class OrderManager {
             MyLogger.out("Recieved message from trader: " + method);
             switch (method) {
                 case "acceptOrder":
-                    long orderId = inputStream.readLong();
+                    int orderId = inputStream.readInt();
                     acceptOrder(orderId);
                     break;
                 case "sliceOrder":
                     // read the inputstream with id of order to slice and the size of it
-                    long idToSlice = inputStream.readLong();
+                    int idToSlice = inputStream.readInt();
                     int sizeOfSlice = inputStream.readInt();
                     Order o = orders.get(idToSlice);
                     if(o==null) {
-                        MyLogger.out("order no longer exists: " + idToSlice);
+                        MyLogger.out("Order no longer exists: " + idToSlice);
                         break;
                     }
                     int slicedId = sliceOrder(idToSlice, sizeOfSlice);
@@ -226,25 +214,18 @@ public class OrderManager {
         }
     }
 
-
     // Create a new order
-    //TODO use side to determine if the new order is a buy or a sell (at the moment assumes sell)
-    private void newOrder(long clientId, long clientOrderId, Ric ric, char side, int quantity) throws IOException {
+    private void newOrder(int clientId, int clientOrderId, Ric ric, char side, int quantity) throws IOException {
         orders.put(id, new Order(id, clientId, clientOrderId, new Instrument(ric), quantity, side));
         if(side == '1') {
             MyLogger.out("New order with side : BUY");
         }  else if (side == '2') {
             MyLogger.out("New order with side: SELL");
-        } else {
-            MyLogger.out("Something went wrong god help us all");
         }
-        //TODO the order manager should send a pending new execution report to the client at this point
         sendUpdateToClient(orders.get(id));
 
         //send the new order to the trading screen
         sendOrderToTrader(id, orders.get(id), TradeScreen.api.newOrder);
-        //send the new order to the trading screen
-        //don't do anything else with the order, as we are simulating high touch orders and so need to wait for the trader to accept the order
         id++;
     }
 
@@ -256,14 +237,14 @@ public class OrderManager {
         MyLogger.out("Sent update to client:        " + tag.getCOrderId() + " " + tag.getOMOrderId() + " " + tag.getOrdStatus());
     }
 
-    private void sendOrderToTrader(long id, Order o, Object method) throws IOException {
+    private void sendOrderToTrader(int id, Order o, Object method) throws IOException {
         ObjectOutputStream ost = new ObjectOutputStream(trader.getOutputStream());
         ost.writeObject(method);
-        ost.writeLong(id);
+        ost.writeInt(id);
         ost.writeObject(o);
         ost.flush();
     }
-    public void acceptOrder(long id) throws IOException {
+    public void acceptOrder(int id) throws IOException {
         Order o = orders.get(id);
         if(o==null) {
             MyLogger.out("order no longer exists: " + id);
@@ -279,7 +260,7 @@ public class OrderManager {
     }
 
     // Slice order into multiple smaller orders.
-    public int sliceOrder(long id, int sliceSize) throws IOException {
+    public int sliceOrder(int id, int sliceSize) throws IOException {
         Order o = orders.get(id);
         //slice the order. We have to check this is a valid size.
         //Order has a list of slices, and a list of fills, each slice is a childorder and each fill is associated with either a child order or the original order
@@ -292,9 +273,9 @@ public class OrderManager {
     }
 
     // Attempt to match orders.
-    private void internalCross(long id, Order o) throws IOException {
-        for (Map.Entry<Long, Order> entry : orders.entrySet()) {
-            if (entry.getKey().longValue() == id) continue;
+    private void internalCross(int id, Order o) throws IOException {
+        for (Map.Entry<Integer, Order> entry : orders.entrySet()) {
+            if (entry.getKey().intValue() == id) continue;
             Order matchingOrder = entry.getValue();
 
             if (!(matchingOrder.instrument.toString().equals(o.instrument.toString()) && matchingOrder.initialMarketPrice == o.initialMarketPrice &&
@@ -309,7 +290,7 @@ public class OrderManager {
         }
     }
 
-    private void setToPendingCancelled(int clientId, long CorderID, long orderID) throws IOException {
+    private void setToPendingCancelled(int clientId, int CorderID, int orderID) throws IOException {
         //todo set to pending cancelled
         //in the main loop if you recieve an update on the cancelled order then deal with that
         Order o = orders.get(orderID);
@@ -335,7 +316,7 @@ public class OrderManager {
     }
 
     // Fill order
-    private void newFill(long id, int sliceId, int size, double price) throws IOException {
+    private void newFill(int id, int sliceId, int size, double price) throws IOException {
         Order o = orders.get(id);
         o.slices.get(sliceId).createFill(size, price);
         if (o.sizeRemaining() == 0)
@@ -344,11 +325,11 @@ public class OrderManager {
     }
 
     // Send order to the main router.
-    private void routeOrder(long id, int sliceId, int size, Order order) throws IOException {
+    private void routeOrder(int id, int sliceId, int size, Order order) throws IOException {
         for (Socket r : orderRouters) {
             ObjectOutputStream os = new ObjectOutputStream(r.getOutputStream());
             os.writeObject(Router.api.priceAtSize);
-            os.writeLong(id);
+            os.writeInt(id);
             os.writeInt(sliceId);
             os.writeObject(order.instrument);
             os.writeInt(size);
@@ -372,7 +353,7 @@ public class OrderManager {
         }
         ObjectOutputStream os = new ObjectOutputStream(orderRouters[minIndex].getOutputStream());
         os.writeObject(Router.api.routeOrder);
-        os.writeLong(o.id);
+        os.writeInt(o.id);
         os.writeInt(sliceId);
         os.writeInt(o.sizeRemaining());
         os.writeObject(o.instrument);
@@ -384,7 +365,7 @@ public class OrderManager {
         //order.orderRouter.writeObject(order);
     }
 
-    private void price(long id, Order o) throws IOException {
+    private void price(int id, Order o) throws IOException {
         liveMarketData.setPrice(o);
         sendOrderToTrader(id, o, TradeScreen.api.price);
     }

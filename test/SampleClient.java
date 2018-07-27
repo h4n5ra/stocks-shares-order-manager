@@ -68,7 +68,7 @@ public class SampleClient implements Client {
         }
         if (orderManagerConnection.isConnected()) {
             ObjectOutputStream os = new ObjectOutputStream(orderManagerConnection.getOutputStream());
-            long OMOrderID = OUT_QUEUE.get("" + idToCancel).getOMOrderID();
+            int OMOrderID = OUT_QUEUE.get("" + idToCancel).getOMOrderID();
             IFixTag tag = FixTagFactory.makeCancelRequest(idToCancel, OMOrderID);
 //          OrderManager.makeClientRequest();
             tag.send(os);

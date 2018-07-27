@@ -15,7 +15,7 @@ public class NewOrderSingle implements Serializable {
 	private int instrid;
 	private char status=FixTagRef.PENDING_NEW;
 	private Instrument instrument;
-	private long OMOrderID;
+	private int OMOrderID;
 
 	public char getStatus() {
 		return status;
@@ -25,11 +25,11 @@ public class NewOrderSingle implements Serializable {
 		this.status = status;
 	}
 
-	public long getOMOrderID() {
+	public int getOMOrderID() {
 		return OMOrderID;
 	}
 
-	public void setOMOrderID(long OMOrderID) {
+	public void setOMOrderID(int OMOrderID) {
 		this.OMOrderID = OMOrderID;
 	}
 

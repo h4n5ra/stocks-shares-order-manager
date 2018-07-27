@@ -8,7 +8,7 @@ import java.io.ObjectOutputStream;
 public class FixTag implements IFixTag {
 
     private static final char ERRC = '\0';
-    private static final long ERRL = -1;
+    private static final int ERRL = -1;
     private static final Ric ERRRIC = new Ric("NAN.NAN");
 
     char msgType;
@@ -16,8 +16,8 @@ public class FixTag implements IFixTag {
     private static final char cancelOrderRequest = 'F';
     private static final char executionReport = '8';
 
-    long OMOrderId;
-    long COrderId;
+    int OMOrderId;
+    int COrderId;
     char ordStatus;
     char side;
     int quantity;
@@ -26,11 +26,11 @@ public class FixTag implements IFixTag {
         return msgType;
     }
 
-    public long getOMOrderId() {
+    public int getOMOrderId() {
         return OMOrderId;
     }
 
-    public long getCOrderId() {
+    public int getCOrderId() {
         return COrderId;
     }
 

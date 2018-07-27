@@ -20,17 +20,17 @@ import Ref.Instrument;
 */
 
 public class Order implements Serializable{
-	public long id;
+	public int id;
 	public Instrument instrument;
 	public double initialMarketPrice = 199;
-	public long clientOrderID;
+	public int clientOrderID;
 	public char side;
 	public int size;
     public ArrayList<Order>slices;
     public ArrayList<Fill>fills;
 	public double[] bestPrices;
 	public int bestPriceCount;
-	public long clientid;
+	public int clientid;
 	char OrdStatus='A';
 	boolean isRouted = false;
 	 //OrdStatus is Fix 39, 'A' is 'Pending New'
@@ -191,7 +191,7 @@ public class Order implements Serializable{
 		isRouted=false;
 	}
 
-	public Order(long orderId, long clientId, long clientOrderID, Instrument instrument, int size, char side){
+	public Order(int orderId, int clientId, int clientOrderID, Instrument instrument, int size, char side){
 		this.clientOrderID =clientOrderID;
 		this.size=size;
 		this.clientid=clientId;

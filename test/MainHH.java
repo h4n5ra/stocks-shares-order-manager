@@ -182,7 +182,7 @@ class MockOMHH extends Thread{
 		try{
 			OrderManager m = new OrderManager(routers,clients,trader,liveMarketData, false);//the manager runs forever in its constructor.
             m.mainLoop();
-		}catch(IOException | ClassNotFoundException | InterruptedException e){
+		}catch(InterruptedException e){
 			MyLogger.out(e.getMessage(), Level.FATAL);
 		}
 	}

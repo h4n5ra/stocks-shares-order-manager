@@ -12,9 +12,9 @@ public interface IFixTag {
 
     char getMsgType();
 
-    long getOMOrderId();
+    int getOMOrderId();
 
-    long getCOrderId();
+    int getCOrderId();
 
     char getOrdStatus();
 
